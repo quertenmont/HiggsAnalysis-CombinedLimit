@@ -145,7 +145,7 @@ void cacheutils::ValuesCache::clear()
     for (int i = 0; i < size_; ++i) items[i]->good = false;
 }
 
-std::pair<std::vector<Double_t> *, bool> cacheutils::ValuesCache::get() 
+std::pair<cacheutils::ValuesCache::Values *, bool> cacheutils::ValuesCache::get() 
 {
     int found = -1; bool good = false;
     for (int i = 0; i < size_; ++i) {
@@ -194,7 +194,7 @@ std::pair<std::vector<Double_t> *, bool> cacheutils::ValuesCache::get()
     }
     if (!good) items[found]->checker.changed(true); // store new values in cache sentry
     items[found]->good = true;                      // mark this as valid entry
-    return std::pair<std::vector<Double_t> *, bool>(&items[found]->values, good);
+    return std::pair<cacheutils::ValuesCache::Values *, bool>(items[found], good);
 }
 
 cacheutils::CachingPdf::CachingPdf(RooAbsReal *pdf, const RooArgSet *obs) :
@@ -222,18 +222,24 @@ cacheutils::CachingPdf::~CachingPdf()
 }
 
 const std::vector<Double_t> & 
-cacheutils::CachingPdf::eval(const RooAbsData &data) 
+cacheutils::CachingPdf::eval(const RooAbsData &data, double coeff) 
 {
 #ifdef DEBUG_CACHE
     PerfCounter::add("CachingPdf::eval called");
 #endif
     bool newdata = (lastData_ != &data);
     if (newdata) newData_(data);
-    std::pair<std::vector<Double_t> *, bool> hit = cache_.get();
+    std::pair<cacheutils::ValuesCache::Values *, bool> hit = cache_.get();
     if (!hit.second) {
-        realFill_(data, *hit.first);
-    } 
-    return *hit.first;
+        realFill_(data, hit.first->values);
+        hit.first->valuesScaled.resize(hit.first->values.size());
+        vectorized::mul_assign(hit.first->values.size(), &hit.first->values[0], coeff, &hit.first->valuesScaled[0]);
+        hit.first->coeff = coeff;
+    }  else if (hit.first->coeff != coeff) {
+        vectorized::mul_assign(hit.first->values.size(), &hit.first->values[0], coeff, &hit.first->valuesScaled[0]);
+        hit.first->coeff = coeff;
+    }
+    return hit.first->valuesScaled;
 }
 
 void
@@ -479,14 +485,15 @@ cacheutils::CachingAddNLL::evaluate() const
             sumCoeff += coeff;
         }
         // get vals
-        const std::vector<Double_t> &pdfvals = itp->eval(*data_);
+        const std::vector<Double_t> &pdfvals = itp->eval(*data_, coeff);
         // update running sum
         //    std::vector<Double_t>::const_iterator itv = pdfvals.begin();
         //    for (its = bgs; its != eds; ++its, ++itv) {
         //         *its += coeff * (*itv); // sum (n_i * pdf_i)
         //    }
         // vectorize to make it faster
-        vectorized::mul_add(pdfvals.size(), coeff, &pdfvals[0], &partialSum_[0]);
+        //vectorized::mul_add(pdfvals.size(), coeff, &pdfvals[0], &partialSum_[0]);
+        vectorized::add(pdfvals.size(), &pdfvals[0], &partialSum_[0]);
     }
     // then get the final nll
     double ret = 0;

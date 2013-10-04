@@ -34,6 +34,11 @@ namespace cacheutils {
 // Part zero point five: Cache of pdf values for different parameters
     class ValuesCache {
         public:
+            struct Values {
+                std::vector<Double_t> values;
+                std::vector<Double_t> valuesScaled;
+                double                coeff;
+            };
             ValuesCache(const RooAbsReal &pdf, const RooArgSet &obs, int size=MaxItems_);
             ValuesCache(const RooAbsCollection &params, int size=MaxItems_);
             ~ValuesCache();
@@ -41,13 +46,12 @@ namespace cacheutils {
             // if available, return (&values, true)
             // if not available, return (&room, false)
             // and it will be up to the caller code to fill the room the new item
-            std::pair<std::vector<Double_t> *, bool> get(); 
+            std::pair<Values *, bool> get(); 
             void clear();
         private:
-            struct Item {
+            struct Item : public Values {
                 Item(const RooAbsCollection &set)   : checker(set),   good(false) {}
                 Item(const ArgSetChecker    &check) : checker(check), good(false) {}
-                std::vector<Double_t> values;
                 ArgSetChecker         checker;
                 bool                  good;
             };
@@ -61,7 +65,7 @@ class CachingPdf {
         CachingPdf(RooAbsReal *pdf, const RooArgSet *obs) ;
         CachingPdf(const CachingPdf &other) ;
         virtual ~CachingPdf() ;
-        const std::vector<Double_t> & eval(const RooAbsData &data) ;
+        const std::vector<Double_t> & eval(const RooAbsData &data, double coeff) ;
         const RooAbsReal *pdf() const { return pdf_; }
         void  setDataDirty() { lastData_ = 0; }
     protected:
