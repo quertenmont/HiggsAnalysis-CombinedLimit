@@ -44,6 +44,7 @@ protected:
   static bool fastScan_;
   static bool hasMaxDeltaNLLForProf_;
   static float maxDeltaNLLForProf_;
+  static unsigned int nThreads_;
 
   // initialize variables
   void initOnce(RooWorkspace *w, RooStats::ModelConfig *mc_s) ;
@@ -54,6 +55,7 @@ protected:
   void doRandomPoints(RooAbsReal &nll) ;
   void doContour2D(RooAbsReal &nll) ;
   void doStitch2D(RooAbsReal &nll) ;
+  void doParallelGrid(RooAbsPdf &pdf, RooAbsData &data) ;
 
   // utilities
   /// for each RooRealVar, set a range 'box' from the PL profiling all other parameters

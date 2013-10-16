@@ -1,6 +1,7 @@
 #include "../interface/MultiDimFit.h"
 #include <stdexcept>
 #include <cmath>
+#include <thread>
 
 #include "TMath.h"
 #include "RooArgSet.h"
@@ -38,6 +39,7 @@ bool MultiDimFit::fastScan_ = false;
 bool MultiDimFit::hasMaxDeltaNLLForProf_ = false;
 bool MultiDimFit::squareDistPoiStep_ = false;
 float MultiDimFit::maxDeltaNLLForProf_ = 200;
+unsigned int MultiDimFit::nThreads_ = 0;
 
 
 MultiDimFit::MultiDimFit() :
@@ -52,7 +54,8 @@ MultiDimFit::MultiDimFit() :
         ("firstPoint",  boost::program_options::value<unsigned int>(&firstPoint_)->default_value(firstPoint_), "First point to use")
         ("lastPoint",  boost::program_options::value<unsigned int>(&lastPoint_)->default_value(lastPoint_), "Last point to use")
         ("fastScan", "Do a fast scan, evaluating the likelihood without profiling it.")
-        ("maxDeltaNLLForProf",  boost::program_options::value<float>(&maxDeltaNLLForProf_)->default_value(maxDeltaNLLForProf_), "Last point to use")
+        ("maxDeltaNLLForProf",  boost::program_options::value<float>(&maxDeltaNLLForProf_)->default_value(maxDeltaNLLForProf_), "Max unprofiled NLL beyond which combine shouldn't even try profiling")
+        ("nThreads",  boost::program_options::value<unsigned int>(&nThreads_)->default_value(nThreads_), "Run in parallel with N threads")
        ;
 }
 
@@ -129,7 +132,14 @@ bool MultiDimFit::runSpecific(RooWorkspace *w, RooStats::ModelConfig *mc_s, RooS
             break;
         case Singles: if (res.get()) doSingles(*res); break;
         case Cross: doBox(*nll, cl, "box", true); break;
-        case Grid: doGrid(*nll); break;
+        case Grid: 
+                if (nThreads_ > 0) {
+                    nll.reset();
+                    doParallelGrid(pdf, data); 
+                } else {
+                    doGrid(*nll); 
+                }
+                break;
         case RandomPoints: doRandomPoints(*nll); break;
         case Contour2D: doContour2D(*nll); break;
         case Stitch2D: doStitch2D(*nll); break;
@@ -323,6 +333,120 @@ void MultiDimFit::doGrid(RooAbsReal &nll)
         }
     }
 }
+
+void MultiDimFit::doParallelGrid(RooAbsPdf &pdf, RooAbsData &data) 
+{
+    unsigned int n = poi_.size();
+    std::vector<double> pmin(n), pmax(n);
+    for (unsigned int i = 0; i < n; ++i) {
+        fprintf(stdout, "POI[%d] = %s @ %p\n", i, poiVars_[i]->GetName(), (void*)poiVars_[i]);
+        pmin[i] = poiVars_[i]->getMin();
+        pmax[i] = poiVars_[i]->getMax();
+    }
+    unsigned int threads = nThreads_;
+    std::vector<RooArgSet>    copies(threads);
+    std::vector<RooAbsPdf *> pdfs(threads);
+    for (unsigned int i = 0; i < threads; ++i) {
+        pdfs[i] = utils::fullClonePdf(&pdf, copies[i], true);
+    }
+
+    typedef std::pair<unsigned int, double> point;
+    typedef std::vector<point> points;
+    std::vector<points> nllvals(threads);
+    CloseCoutSentry sentry(verbose < 2);
+    std::vector<std::thread> workers;
+    for (unsigned int ithread = 0; ithread < threads; ++ithread) {
+        //std::auto_ptr<RooAbsReal> mynll(pdfs[ithread]->createNLL(data));
+        RooAbsReal *mynll = pdfs[ithread]->createNLL(data);
+        mynll->getVal(); // forces some initialization
+        workers.push_back(std::thread([ithread,threads,mynll,&poiVars_,n,&points_,&minimizerStrategy_,&nllvals,&copies,&fastScan_](){
+        points &out = nllvals[ithread];
+        RooAbsReal &nll = *mynll;
+        const double nll0 = nll.getVal();
+        std::vector<RooRealVar *> vars(poi_.size());
+        std::vector<double> pmin(n), pmax(n);
+        for (unsigned int i = 0; i < n; ++i) {
+            vars[i] = dynamic_cast<RooRealVar*>(copies[ithread].find(poiVars_[i]->GetName()));
+            pmin[i] = vars[i]->getMin();
+            pmax[i] = vars[i]->getMax();
+            vars[i]->setConstant(true);
+            //fprintf(sentry.trueStdOut(), "Thread %d: POI[%d] = %s @ %p, %s\n", ithread, i, vars[i]->GetName(), (void*)vars[i], nll.dependsOn(*vars[i]) ? "Y" : "N");
+        }
+        //CascadeMinimizer minim(nll, CascadeMinimizer::Constrained);
+        RooMinimizer minim(nll);
+        minim.setStrategy(minimizerStrategy_);
+        std::auto_ptr<RooArgSet> params(nll.getParameters((const RooArgSet *)0));
+        RooArgSet snap; params->snapshot(snap);
+        if (n == 2) points_ = std::pow(ceil(sqrt(double(points_))), 2); // round up to the next square
+        unsigned int npoints = ceil(points_/double(threads));
+        unsigned int firstPoint = ithread*npoints;
+        unsigned int lastPoint  = std::min(points_,firstPoint+npoints);
+        //fprintf(sentry.trueStdOut(), "Thread %d will run [%d,%d]\n", ithread,firstPoint,lastPoint);
+        out.reserve(npoints);
+        if (n == 1) {
+            for (unsigned int i = firstPoint; i < lastPoint; ++i) {
+                *params = snap; 
+                double x =  pmin[0] + (i+0.5)*(pmax[0]-pmin[0])/points_; 
+                vars[0]->setVal(x);
+                // now we minimize
+                bool ok = fastScan_ || (hasMaxDeltaNLLForProf_ && (nll.getVal() - nll0) > maxDeltaNLLForProf_) ? 
+                    true : 
+                    nll.getVal(); //minim.minimize(verbose-1);
+                if (ok) {
+                    out.push_back(point(i, nll.getVal() - nll0));
+                }
+            }
+        } else if (n == 2) {
+            unsigned int sqrn = ceil(sqrt(double(points_))); 
+            unsigned int ipoint = 0;
+            RooAbsReal::setEvalErrorLoggingMode(RooAbsReal::CountErrors);
+            double deltaX = (pmax[0]-pmin[0])/sqrn, deltaY = (pmax[1]-pmin[1])/sqrn;
+            for (unsigned int i = 0; i < sqrn; ++i) {
+                for (unsigned int j = 0; j < sqrn; ++j, ++ipoint) {
+                    if (ipoint < firstPoint) continue;
+                    if (ipoint > lastPoint)  break;
+                    *params = snap; 
+                    double x =  pmin[0] + (i+0.5)*deltaX; 
+                    double y =  pmin[1] + (j+0.5)*deltaY; 
+                    vars[0]->setVal(x);
+                    vars[1]->setVal(y);
+                    nll.clearEvalErrorLog(); nll.getVal();
+                    if (nll.numEvalErrors() > 0) { 
+                        out.push_back(point(i, 999));
+                        continue;
+                    }
+                    // now we minimize
+                    bool skipme = hasMaxDeltaNLLForProf_ && (nll.getVal() - nll0) > maxDeltaNLLForProf_;
+                    bool ok = fastScan_ || skipme ? true :  minim.minimize("Minuit2","migrad"); // verbose-1);
+                    out.push_back(point(ipoint, ok ? nll.getVal() - nll0 : 999));
+                    //fprintf(sentry.trueStdOut(), "Thread %d: %d (%g,%g) -> %g\n", ithread,ipoint,x,vars[0]->getVal(),out.back().second);
+                }
+            }
+        }
+        }));
+    } // thread-spawning loop
+    for(auto& t : workers) t.join();
+    if (n == 1) {
+        for (auto ps : nllvals) { for (auto p : ps) {
+            poiVals_[0] = pmin[0] + (p.first+0.5)*(pmax[0]-pmin[0])/points_;
+            deltaNLL_ = p.second;
+            Combine::commitPoint(true, ROOT::Math::chisquared_cdf_c(2*deltaNLL_, n+nOtherFloatingPoi_));
+        }}
+    } else if (n == 2) {
+        unsigned int sqrn = ceil(sqrt(double(points_)));
+        double deltaX =  (pmax[0]-pmin[0])/sqrn, deltaY = (pmax[1]-pmin[1])/sqrn;
+        for (auto ps : nllvals) { for (auto p : ps) {
+            int i = p.first / sqrn, j = p.first % sqrn;
+            poiVals_[0] =  pmin[0] + (i+0.5)*deltaX;
+            poiVals_[1] =  pmin[1] + (j+0.5)*deltaY;
+            deltaNLL_ = p.second;
+            fprintf(sentry.trueStdOut(), "At end: %d -> %g\n", p.first,p.second);
+            Combine::commitPoint(true, ROOT::Math::chisquared_cdf_c(2*deltaNLL_, n+nOtherFloatingPoi_));
+        }}
+    }
+}
+
+
 
 void MultiDimFit::doRandomPoints(RooAbsReal &nll) 
 {
