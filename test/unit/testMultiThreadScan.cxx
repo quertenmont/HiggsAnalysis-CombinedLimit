@@ -1,6 +1,6 @@
 #include <cmath>
 #include <cstdio>
-//#include "HiggsAnalysis/CombinedLimit/interface/CascadeMinimzer.h"
+#include "HiggsAnalysis/CombinedLimit/interface/RooMinimizerOpt.h"
 #include <thread>
 #include <TMath.h>
 #include <TFile.h>
@@ -15,9 +15,23 @@
 #include <RooFitResult.h>
 #include <RooStats/RooStatsUtils.h>
 #include <RooStats/ModelConfig.h>
+#include <RooSentinel.h>
 #include <Math/MinimizerOptions.h>
 #include "Math/Minimizer.h"
 #include "Math/Factory.h"
+
+void runMinim(RooAbsReal *nll) {
+    RooMinimizer minim(*nll);
+    minim.minimize("Minuit2","minimize");
+    double y = nll->getVal();
+}
+void runMinimOpt(RooAbsReal *nll) {
+    RooMinimizerOpt minim(*nll);
+    minim.minimize("Minuit2","minimize");
+    double y = nll->getVal();
+}
+
+
 
 void test0(int test) {
     std::vector<RooWorkspace *> wi;
@@ -63,10 +77,12 @@ void test0(int test) {
         }
     } else if (test == 3) {
         std::cout << "Parallel instantiation of the minimizer, on the stack (crash)" << std::endl;
+        RooSentinel::activate(); 
         for (int i = 0, n = wi.size(); i < n; ++i) {
             RooAbsReal   *nll   = nlli[i];
             workers.push_back(std::thread([nll]() {
                 RooMinimizer minim(*nll);
+                double y = nll->getVal();
             }));
         }
     } else if (test == 4) {
@@ -84,6 +100,31 @@ void test0(int test) {
             workers.push_back(std::thread([nll]() {
                 RooMinimizer *minim = new RooMinimizer(*nll);
                 minim->minimize("Minuit2","migrad");
+            }));
+        }
+    } else if (test == 6) {
+        std::cout << "Parallel minimizer, no lambdas" << std::endl;
+        RooSentinel::activate(); 
+        for (int i = 0, n = wi.size(); i < n; ++i) {
+            workers.push_back(std::thread(runMinim, nlli[i]));
+        }
+    } else if (test == 7) {
+        std::cout << "Parallel minimizerOpt, no lambdas" << std::endl;
+        RooSentinel::activate(); 
+        for (int i = 0, n = wi.size(); i < n; ++i) {
+            workers.push_back(std::thread(runMinimOpt, nlli[i]));
+        }
+    } else if (test == 8) {
+        std::cout << "Pre-instantiation of the minimizerOpt on the heap, running it in parallel (error)" << std::endl;
+        minims.resize(wi.size());
+        for (int i = 0, n = wi.size(); i < n; ++i) {
+            minims[i] = new RooMinimizerOpt(*nlli[i]);
+            RooAbsReal *nll = nlli[i];
+            RooMinimizer *minim = minims[i];
+            double y = nll->getVal(); // trigger one getval
+            workers.push_back(std::thread([nll,minim]() {
+                minim->minimize("Minuit2","migrad");
+                double y2 = nll->getVal(); // trigger one getval
             }));
         }
     }

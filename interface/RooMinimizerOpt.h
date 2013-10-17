@@ -5,7 +5,7 @@
    #error "You cannot include RooMinimizer.h or RooMinimizerFcn.h before RooMinimizerOpt.h"
 #else
    #define private protected
-   #include <RooMinimizer.h>
+   #include "HiggsAnalysis/CombinedLimit/src/RooMinimizer_copy.h"
    #undef protected
 #endif
 
@@ -19,7 +19,12 @@ class RooMinimizerOpt : public RooMinimizer {
         Int_t hesse() ;
         Int_t minos() ;
         Int_t minos(const RooArgSet& minosParamList) ;
-
+        void setErrorLevel(Double_t level) ;
+        void setEps(Double_t eps) ;
+        void setStrategy(Int_t strat) ;
+        Int_t setPrintLevel(Int_t newLevel) ; 
+    protected:
+        ROOT::Fit::Fitter theFitter;
 };
 
 class RooMinimizerFcnOpt : public RooMinimizerFcn {
