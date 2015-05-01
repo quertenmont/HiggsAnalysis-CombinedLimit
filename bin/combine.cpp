@@ -274,6 +274,7 @@ int main(int argc, char **argv) {
     delete i->second;
 
   if (vm.count("perfCounters")) PerfCounter::printAll();
+  if (vm.count("perfCounters")) perftimer::printAll();
 }
 
 

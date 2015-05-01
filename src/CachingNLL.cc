@@ -102,6 +102,16 @@ namespace {
 namespace { unsigned long CachingSimNLLEvalCount = 0; }
 #endif
 
+#if 1
+#define TOKENPASTE(x, y) x ## y
+#define TOKENPASTE2(x, y) TOKENPASTE(x, y)
+#define TraceFunc1(x) perftimer::TimeMe TOKENPASTE2(timeMe,__COUNTER__)(x);
+#define TraceFunc2(x,y) perftimer::TimeMe TOKENPASTE2(timeMe,__COUNTER__)(x,y);
+#else
+#define TraceFunc1(x) 
+#define TraceFunc2(x,y) 
+#endif
+
 cacheutils::ArgSetChecker::ArgSetChecker(const RooAbsCollection &set) 
 {
     std::auto_ptr<TIterator> iter(set.createIterator());
@@ -125,6 +135,7 @@ cacheutils::ArgSetChecker::ArgSetChecker(const RooAbsCollection &set)
 bool 
 cacheutils::ArgSetChecker::changed(bool updateIfChanged) 
 {
+    TraceFunc1("ArgSetChecker::changed")
     bool changed = false;
     std::vector<RooRealVar *>::const_iterator it = vars_.begin(), ed = vars_.end();
     std::vector<double>::iterator itv = vals_.begin();
@@ -259,6 +270,9 @@ cacheutils::CachingPdf::~CachingPdf()
 const std::vector<Double_t> & 
 cacheutils::CachingPdf::eval(const RooAbsData &data) 
 {
+    TraceFunc1("CachingPdf::eval")
+    TraceFunc2("CachingPdf::eval:",pdfOriginal_->GetName())
+    TraceFunc2("CachingPdf::eval:",pdfOriginal_->ClassName())
 #ifdef DEBUG_CACHE
     PerfCounter::add("CachingPdf::eval called");
 #endif
@@ -274,6 +288,9 @@ cacheutils::CachingPdf::eval(const RooAbsData &data)
 void
 cacheutils::CachingPdf::newData_(const RooAbsData &data) 
 {
+    TraceFunc1("CachingPdf::newData_")
+    TraceFunc2("CachingPdf::newData_:",pdfOriginal_->GetName())
+    TraceFunc2("CachingPdf::newData_:",pdfOriginal_->ClassName())
     lastData_ = &data;
     pdf_->optimizeCacheMode(*data.get());
     pdf_->attachDataSet(data);
@@ -296,6 +313,9 @@ cacheutils::CachingPdf::newData_(const RooAbsData &data)
 void
 cacheutils::CachingPdf::realFill_(const RooAbsData &data, std::vector<Double_t> &vals) 
 {
+    TraceFunc1("CachingPdf::realFill")
+    TraceFunc2("CachingPdf::realFill:",pdfOriginal_->GetName())
+    TraceFunc2("CachingPdf::realFill:",pdfOriginal_->ClassName())
 #ifdef DEBUG_CACHE
     PerfCounter::add("CachingPdf::realFill_ called");
 #endif
@@ -333,6 +353,9 @@ template <typename PdfT, typename VPdfT>
 void
 cacheutils::OptimizedCachingPdfT<PdfT,VPdfT>::realFill_(const RooAbsData &data, std::vector<Double_t> &vals) 
 {
+    TraceFunc1(std::string(typeid(VPdfT).name())+"::realFill")
+    TraceFunc2(std::string(typeid(VPdfT).name())+"::realFill:",pdfOriginal_->GetName())
+    TraceFunc2(std::string(typeid(VPdfT).name())+"::realFill:",pdfOriginal_->ClassName())
     vpdf_->fill(vals);
 }
 
@@ -510,6 +533,8 @@ cacheutils::CachingAddNLL::setup_()
 Double_t 
 cacheutils::CachingAddNLL::evaluate() const 
 {
+    TraceFunc1("CachingAddNLL::evaluate")
+    TraceFunc2("CachingAddNLL::evaluate:",pdf_->GetName())
 #ifdef DEBUG_CACHE
     PerfCounter::add("CachingAddNLL::evaluate called");
 #endif
@@ -533,6 +558,7 @@ cacheutils::CachingAddNLL::evaluate() const
     double sumCoeff = 0;
     //std::cout << "Performing evaluation of " << GetName() << std::endl;
     for ( ; itc != edc; ++itp, ++itc ) {
+        TraceFunc2("CachingAddNLL:coeff:",pdf_->GetName())
         // get coefficient
         Double_t coeff = (*itc)->getVal();
         if (isRooRealSum_) {
@@ -541,6 +567,7 @@ cacheutils::CachingAddNLL::evaluate() const
         } else {
             sumCoeff += coeff;
         }
+        TraceFunc2("CachingAddNLL:pdfvals:",pdf_->GetName())
         // get vals
         const std::vector<Double_t> &pdfvals = itp->eval(*data_);
 #ifdef LOG_ADDPDFS
@@ -568,6 +595,8 @@ cacheutils::CachingAddNLL::evaluate() const
             else *its = 1;
         }
     }
+
+    TraceFunc2("CachingAddNLL:reduce:",pdf_->GetName())
     #ifndef ADDNLL_KAHAN_SUM
     // Do the reduction 
     //      for ( its = bgs, itw = bgw ; its != eds ; ++its, ++itw ) {
@@ -783,6 +812,7 @@ cacheutils::CachingSimNLL::setup_()
 Double_t 
 cacheutils::CachingSimNLL::evaluate() const 
 {
+    TraceFunc1("CachingSimNLL::evaluate")
     TRACE_POINT(params_)
 #ifdef TRACE_NLL_EVAL_COUNT
     ::CachingSimNLLEvalCount++;

@@ -30,4 +30,17 @@ namespace runtimedef {
     /// set the flag, with a run-time name
     void set(const std::string & name, int value);
 }
+
+namespace perftimer {
+    struct Record;
+    class TimeMe { 
+        public: 
+            TimeMe(const std::string &name, const std::string &postfix = "") ;
+            ~TimeMe() ;
+        private:
+            long long int start_;
+            Record &record_;
+    };
+    void printAll();
+};
 #endif
