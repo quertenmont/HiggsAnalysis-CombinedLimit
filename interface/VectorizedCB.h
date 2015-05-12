@@ -5,6 +5,7 @@
 #include <RooAbsData.h>
 #include <vector>
 #include <cmath>
+#include <vdt/vdtMath.h>
 
 class VectorizedCBShape {
     class Worker : public RooCBShape {

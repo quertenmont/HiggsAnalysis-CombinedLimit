@@ -9,6 +9,7 @@
 #include "RooDataHist.h"
 
 using namespace TMath;
+using namespace std;
 
 ClassImp(HZZ4L_RooSpinZeroPdf_2D) 
 

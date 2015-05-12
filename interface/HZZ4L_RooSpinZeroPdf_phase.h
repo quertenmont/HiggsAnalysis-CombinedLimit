@@ -18,6 +18,7 @@
 #include "RooDataHist.h"
 #include "RooHistFunc.h"
 using namespace RooFit;
+using namespace std;
 class HZZ4L_RooSpinZeroPdf_phase : public RooAbsPdf {
 protected:
 

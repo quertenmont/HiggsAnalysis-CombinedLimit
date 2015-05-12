@@ -21,6 +21,8 @@
 class RooRealVar;
 class RooArgList ;
 
+using namespace std;
+
 namespace RooStats{
 namespace HistFactory{
 

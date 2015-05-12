@@ -13,6 +13,7 @@
 #include <algorithm>
 
 using namespace TMath;
+using namespace std;
 
 namespace RooFit{
 	

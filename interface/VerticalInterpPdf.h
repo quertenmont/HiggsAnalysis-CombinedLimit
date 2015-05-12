@@ -9,6 +9,7 @@
 #include "RooAICRegistry.h"
 #include "RooObjCacheManager.h"
 
+using namespace std;
 class VerticalInterpPdf : public RooAbsPdf {
 public:
 

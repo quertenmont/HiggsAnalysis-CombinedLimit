@@ -1,4 +1,4 @@
-#include "vdt/vdtMath.h"
+#include <vdt/vdtMath.h>
 
 namespace vectorized {
     // oarray += coeff * iarray

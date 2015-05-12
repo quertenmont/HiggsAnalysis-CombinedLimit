@@ -5,6 +5,8 @@
 #include "RooSetProxy.h"
 #include "TIterator.h"
 
+using namespace std;
+
 class SimpleCacheSentry : public RooAbsArg {
     public:
         SimpleCacheSentry() ;
